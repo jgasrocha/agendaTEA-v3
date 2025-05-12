@@ -8,24 +8,25 @@ use Inertia\Inertia;
 use App\Models\Curso;
 use App\Models\TrocaAgenda;
 use App\Models\Turma;
-use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Gate;
 
 class TurmaController extends Controller
 {
-    use AuthorizesRequests;
     public function index(Curso $curso)
     {
+        $user = Auth::user();
+        $isCourseAdmin = $user ? $curso->admins->contains($user) : false;
         return Inertia::render('Turmas/Index', [
             'curso' => $curso,
-            'turmas' => $curso->turmas()->withCount('agendas')->get()
+            'turmas' => $curso->turmas()->withCount('agendas')->get(),
+            'auth' => ['user' => $user],
+            'isCourseAdmin' => $isCourseAdmin
         ]);
     }
 
     public function agenda(Curso $curso, Turma $turma)
     {
-        $this->authorize('view', $turma);
         $agendas = AgendaFixa::with(['disciplina', 'user'])
             ->where('turma_id', $turma->id)
             ->get();
@@ -42,11 +43,16 @@ class TurmaController extends Controller
             ])
             ->get();
 
+        $user = Auth::user();
+        $isCourseAdmin = $user ? $curso->admins->contains($user) : false;
+        $canCreateAgenda = Auth::check() ? Gate::allows('create', [AgendaFixa::class, $curso]) : false;
         return Inertia::render('Turmas/Agenda/Index', [
             'turma' => $turma,
             'agendas' => $agendas,
             'trocasAtivas' => $trocasAtivas,
-            'canEdit' => Gate::allows('edit', $turma)
+            'auth' => ['user' => Auth::user()],
+            'isCourseAdmin' => $isCourseAdmin,
+            'canEdit' => $canCreateAgenda
         ]);
     }
 
@@ -55,6 +61,7 @@ class TurmaController extends Controller
      */
     public function create(Curso $curso)
     {
+        Gate::authorize('create', [Turma::class, $curso]);
         return Inertia::render('Turmas/Create', [
             'curso' => $curso
         ]);
@@ -65,6 +72,8 @@ class TurmaController extends Controller
      */
     public function store(Request $request, Curso $curso)
     {
+        Gate::authorize('create', [Turma::class, $curso]);
+
         $validated = $request->validate([
             'nome' => 'required|string|max:100',
             'semestre' => 'required|string|regex:/^\d{4}\.[12]$/'
@@ -83,7 +92,9 @@ class TurmaController extends Controller
     {
         return Inertia::render('Turmas/Show', [
             'curso' => $curso,
-            'turma' => $turma->load(['agendas.disciplina', 'agendas.user'])
+            'turma' => $turma->load(['agendas.disciplina', 'agendas.user']),
+            'canEdit' => Auth::check() ? Gate::allows('edit', $turma) : false,
+            'canDelete' => Auth::check() ? Gate::allows('delete', $turma) : false
         ]);
     }
 
@@ -92,6 +103,8 @@ class TurmaController extends Controller
      */
     public function edit(Curso $curso, Turma $turma)
     {
+        Gate::authorize('update', $turma);
+
         return Inertia::render('Turmas/Edit', [
             'curso' => $curso,
             'turma' => $turma
@@ -103,6 +116,8 @@ class TurmaController extends Controller
      */
     public function update(Request $request, Curso $curso, Turma $turma)
     {
+        Gate::authorize('update', $turma);
+
         $validated = $request->validate([
             'nome' => 'required|string|max:100',
             'semestre' => 'required|string|regex:/^\d{4}\.[12]$/'
@@ -119,6 +134,8 @@ class TurmaController extends Controller
      */
     public function destroy(Curso $curso, Turma $turma)
     {
+        Gate::authorize('delete', $turma);
+        
         $turma->delete();
 
         return redirect()->route('cursos.turmas.index', $curso)

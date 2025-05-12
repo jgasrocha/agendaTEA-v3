@@ -28,10 +28,8 @@ class ReverterTrocasExpiradasJob implements ShouldQueue
         $trocasExpiradas = TrocaAgenda::with('agendaDesejada')
             ->where('status', 'aceita')
             ->where(function($query) use ($now, $horariosFim) {
-                // Trocas que já passaram da data final
                 $query->where('data_fim', '<', $now)
                     ->orWhere(function($q) use ($now, $horariosFim) {
-                        // Trocas que expiram hoje e já passaram do horário
                         $q->whereDate('data_fim', $now->toDateString())
                             ->whereHas('agendaDesejada', function($subQ) use ($now, $horariosFim) {
                                 $subQ->where(function($q2) use ($now, $horariosFim) {

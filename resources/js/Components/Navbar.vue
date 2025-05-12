@@ -85,7 +85,7 @@ const goToMinhasTrocas = () => {
 const logout = async () => {
   try {
     await router.post(route('logout'));
-    router.visit(route('login'));
+    router.visit(route('home'));
   } catch (error) {
     console.error('Erro ao fazer logout:', error);
   }

@@ -17,10 +17,17 @@ class CursoAdminMiddleware
     {
         $curso = $request->route('curso');
         $user = $request->user();
-
-        if(!$user->is_admin && !$user->cursos->contains($curso)) {
-            return response()->json(['message' => 'Acesso não autorizado a este curso.'], 403);
+        
+        // Verifica se o curso existe e se é um objeto do tipo Curso
+        if (!$curso) {
+            return response()->json(['message' => 'Curso não encontrado.'], 404);
         }
-        return $next($request);
+        
+        // Verifica se o usuário tem permissão
+        if ($user->is_admin || $user->cursosAdmin->contains($curso)) {
+            return $next($request);
+        }
+        
+        return response()->json(['message' => 'Acesso não autorizado a este curso.'], 403);
     }
 }

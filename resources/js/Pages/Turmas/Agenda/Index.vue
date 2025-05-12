@@ -7,14 +7,15 @@
         <p class="text-gray-600">Semestre: {{ formatSemestre(turma.semestre) }}</p>
       </div>
 
-      <Link v-if="canEdit" :href="route('cursos.turmas.agendas.create', { curso: turma.curso_id, turma: turma.id })"
-        class="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg transition-colors shadow-md">
-      <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-        <path fill-rule="evenodd"
-          d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z"
-          clip-rule="evenodd" />
-      </svg>
-      Nova Aula
+      <Link v-if="canEdit || isCourseAdmin || (auth?.user?.is_admin)" 
+            :href="route('cursos.turmas.agendas.create', { curso: turma.curso_id, turma: turma.id })"
+            class="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg transition-colors shadow-md">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+          <path fill-rule="evenodd"
+                d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z"
+                clip-rule="evenodd" />
+        </svg>
+        Nova Aula
       </Link>
     </div>
 
@@ -93,7 +94,7 @@
                   :draggable="!!(dragAndDropEnabled && canDrag(index, bloco, turno))"
                   @dragstart="onDragStart($event, index, bloco, turno)" @dragover="onDragOver($event)"
                   @drop="onDrop($event, index, bloco, turno)">
-                  <div v-if="agendaMap[turno] && agendaMap[turno][index + 1] && agendaMap[turno][index + 1][bloco]"
+                  <div v-if="agendaMap[turno]?.[index + 1]?.[bloco]"
                     class="flex justify-center items-center h-full relative group">
                     <!-- Botão de deletar (apenas para admin) -->
                     <div v-if="auth?.user?.is_admin || canEdit"
@@ -138,8 +139,7 @@
 
           <div v-for="bloco in (turno === 'manhã' ? blocosManha : blocosTarde)" :key="bloco"
             class="mb-4 border-b pb-4 last:border-b-0">
-            <div
-              v-if="agendaMap[turno] && agendaMap[turno][currentDayIndex + 1] && agendaMap[turno][currentDayIndex + 1][bloco]">
+            <div v-if="agendaMap[turno]?.[currentDayIndex + 1]?.[bloco]">
               <div class="flex items-center space-x-3 relative">
                 <!-- Botão de deletar para mobile (apenas para admin) -->
                 <button v-if="auth?.user?.is_admin || canEdit" @click="confirmDelete(currentDayIndex + 1, bloco, turno)"
@@ -181,16 +181,53 @@
 
 <script setup>
 import Navbar from '@/Components/Navbar.vue';
-import { Link, router } from '@inertiajs/vue3';
+import { Link, router, usePage } from '@inertiajs/vue3';
 import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue';
 import Swal from 'sweetalert2';
 
 const props = defineProps({
-  turma: Object,
-  agendas: Array,
-  trocasAtivas: Array,
-  canEdit: Boolean,
-  auth: Object
+  turma: {
+    type: Object,
+    required: true,
+    default: () => ({ 
+      nome: '',
+      semestre: '',
+      curso_id: null,
+      id: null
+    })
+  },
+  disciplinas: {
+    type: Array,
+    default: () => []
+  },
+  agendas: {
+    type: Array,
+    default: () => []
+  },
+  trocasAtivas: {
+    type: Array,
+    default: () => []
+  },
+  canEdit: {
+    type: Boolean,
+    default: false
+  },
+  isCourseAdmin: {
+    type: Boolean,
+    default: false
+  },
+  auth: {
+    type: Object,
+    default: () => ({ 
+      user: {
+        id: null,
+        name: '',
+        email: '',
+        is_admin: false,
+        photo: null
+      }
+    })
+  }
 });
 
 // Configuração básica
@@ -207,20 +244,49 @@ const itemToMove = ref(null);
 const aulaToDelete = ref(null);
 const pollingInterval = ref(null);
 const ultimaVerificacao = ref(new Date());
-const localAgendaMap = ref({});
+const localAgendaMap = ref({ manhã: {}, tarde: {} });
+
+const hasRelationWithTurma = computed(() => {
+  if (!props.auth?.user?.id) return false;
+
+  // 1. Verifica nas disciplinas primeiro
+  if (props.disciplinas?.length > 0) {
+    const found = props.disciplinas.some(d => d?.user_id == props.auth.user.id);
+    if (found) return true;
+  }
+
+  // 2. Verifica nas agendas
+  if (props.agendas?.length > 0) {
+    return props.agendas.some(a => {
+      return a?.user_id == props.auth.user.id || 
+             a?.user?.id == props.auth.user.id;
+    });
+  }
+
+  return false;
+});
+
+function getCreateAgendaRoute() {
+    const user = usePage().props.auth.user;
+    
+    // Para administradores globais, a rota é um pouco diferente devido ao resource controller
+    if (user && user.is_admin) {
+        // Para administradores globais, vamos construir uma URL diretamente
+        // baseado na estrutura de rotas resource
+        return `/admin/cursos/${props.curso.id}/turmas/create`;
+    } else {
+        // Para usuários comuns ou admins de curso
+        return route('cursos.turmas.create', { curso: props.curso.id });
+    }
+}
 
 const shouldShowDragButton = computed(() => {
-  // Se não for um usuário autenticado, não mostra
-  if (!props.auth?.user) return false;
-  
-  // Se for um usuário comum (não admin), mostra sempre
-  if (!props.auth.user.is_admin) return true;
-  
-  // Se for admin, verifica se tem alguma aula com seu user_id
-  return props.agendas.some(aula => aula.user_id === props.auth.user.id);
+  return props.auth?.user && hasRelationWithTurma.value;
 });
+
 // Formatar semestre
 const formatSemestre = (semestre) => {
+  if (!semestre) return '';
   const [ano, periodo] = semestre.split('.');
   return `${ano} - ${periodo === '1' ? '1º Semestre' : '2º Semestre'}`;
 };
@@ -251,8 +317,15 @@ const toggleDragAndDrop = () => {
 };
 
 const canDrag = (index, bloco, turno) => {
-  if (!props.auth?.user) return false;
-  const item = localAgendaMap.value[turno][index + 1] && localAgendaMap.value[turno][index + 1][bloco];
+  if (!props.auth?.user?.id || !dragAndDropEnabled.value) return false;
+  
+  const turnoMap = localAgendaMap.value[turno];
+  if (!turnoMap) return false;
+  
+  const diaMap = turnoMap[index + 1];
+  if (!diaMap) return false;
+  
+  const item = diaMap[bloco];
   return item && item.user_id === props.auth.user.id;
 };
 
@@ -295,6 +368,10 @@ const cancelMove = () => {
 
 const confirmMove = async () => {
   try {
+    if (!draggedItem.value?.item || !itemToMove.value?.item) {
+      throw new Error('Dados inválidos para a troca');
+    }
+
     const payload = {
       agenda_original_id: draggedItem.value.item.id,
       agenda_desejada_id: itemToMove.value.item.id,
@@ -303,10 +380,7 @@ const confirmMove = async () => {
       turma_id: props.turma.id
     };
 
-    console.log('Enviando payload:', payload);
-
     const response = await axios.post(route('troca-agendas.store'), payload);
-    console.log('Resposta do servidor:', response.data);
 
     if (response.data.success) {
       showModal.value = false;
@@ -321,17 +395,12 @@ const confirmMove = async () => {
         showConfirmButton: false
       });
 
-      // Recarregar os dados
       router.reload({ only: ['agendas', 'trocasAtivas'] });
     } else {
       throw new Error(response.data.message || 'A troca não foi processada');
     }
   } catch (error) {
-    console.error('Erro detalhado:', {
-      message: error.message,
-      response: error.response?.data,
-      config: error.config
-    });
+    console.error('Erro detalhado:', error);
 
     let errorMessage = 'Ocorreu um erro ao processar a troca.';
 
@@ -341,6 +410,8 @@ const confirmMove = async () => {
         .join('\n');
     } else if (error.response?.data?.message) {
       errorMessage = error.response.data.message;
+    } else if (error.message) {
+      errorMessage = error.message;
     }
 
     Swal.fire({
@@ -353,49 +424,65 @@ const confirmMove = async () => {
 
 // Exclusão de aula
 const confirmDelete = (dia, bloco, turno) => {
-  if (!props.canEdit) return;
+  if (!props.canEdit && !props.auth?.user?.is_admin) return;
   aulaToDelete.value = { dia, bloco, turno };
   showDeleteModal.value = true;
 };
+
+function getDeleteAgendaRoute(agendaId) {
+    // Use props.auth em vez de usePage().props.auth.user
+    const user = props.auth?.user;
+    const { turma } = props;
+
+    // Para administradores globais
+    if (user?.is_admin) {
+        // Rota direta para admins globais
+        return `/admin/cursos/${turma.curso_id}/turmas/${turma.id}/agendas/${agendaId}`;
+    } else {
+        // Para admins de curso ou professores
+        return route('cursos.turmas.agendas.destroy', {
+            curso: turma.curso_id,
+            turma: turma.id,
+            agenda: agendaId
+        });
+    }
+}
 
 const deleteAula = async () => {
   if (!aulaToDelete.value) return;
 
   deleting.value = true;
   const { dia, bloco, turno } = aulaToDelete.value;
-  const agendaIndex = props.agendas.findIndex(a =>
-    a.dia_semana === dia &&
-    a.bloco === bloco &&
-    a.turno === turno
-  );
-
-  if (agendaIndex === -1) {
-    deleting.value = false;
-    return Swal.fire('Erro', 'Aula não encontrada.', 'error');
-  }
-
+  
   try {
-    const response = await axios.delete(route('admin.cursos.turmas.agendas.destroy', {
-      curso: props.turma.curso_id,
-      turma: props.turma.id,
-      agenda: props.agendas[agendaIndex].id
-    }));
+    const agenda = props.agendas.find(a =>
+      a.dia_semana === dia &&
+      a.bloco === bloco &&
+      a.turno === turno
+    );
+
+    if (!agenda) {
+      throw new Error('Aula não encontrada');
+    }
+
+    const deleteRoute = getDeleteAgendaRoute(agenda.id);
+       
+        const isFullUrl = typeof deleteRoute === 'string' && deleteRoute.startsWith('/');
+        
+        const response = isFullUrl 
+            ? await axios.delete(deleteRoute)
+            : await axios.delete(deleteRoute);
 
     if (response.data.success) {
-      // Atualização imediata do estado local
-      const updatedAgendas = [...props.agendas];
-      updatedAgendas.splice(agendaIndex, 1);
-      
-      // Forçar atualização do agendaMap
-      localAgendaMap.value = calcularAgendaMap(updatedAgendas);
-      
       showDeleteModal.value = false;
       await Swal.fire('Sucesso', 'Aula removida com sucesso!', 'success');
-      
+      router.reload({ only: ['agendas'] });
+    } else {
+      throw new Error(response.data.message || 'Erro ao excluir a aula');
     }
   } catch (error) {
-    console.error('Erro completo:', error);
-    Swal.fire('Erro', error.response?.data?.message || 'Erro ao excluir a aula.', 'error');
+    console.error('Erro ao excluir aula:', error);
+    Swal.fire('Erro', error.message || 'Erro ao excluir a aula.', 'error');
   } finally {
     deleting.value = false;
   }
@@ -407,8 +494,11 @@ const calcularAgendaMap = (agendas) => {
   const hoje = new Date();
   hoje.setHours(0, 0, 0, 0);
 
-  agendas.forEach(agenda => {
+  (agendas || []).forEach(agenda => {
+    if (!agenda) return;
+    
     const { dia_semana, bloco, turno, disciplina, user } = agenda;
+    if (!dia_semana || !bloco || !turno) return;
 
     if (!map[turno][dia_semana]) map[turno][dia_semana] = {};
 
@@ -423,18 +513,18 @@ const calcularAgendaMap = (agendas) => {
     };
   });
 
-  props.trocasAtivas?.forEach(troca => {
+  (props.trocasAtivas || []).forEach(troca => {
+    if (!troca || troca.status !== 'aceita' || !troca.agenda_original || !troca.agenda_desejada) return;
+    
     const dataInicio = new Date(troca.data_inicio);
     dataInicio.setHours(0, 0, 0, 0);
 
     const dataFim = new Date(troca.data_fim);
     dataFim.setHours(23, 59, 59, 999);
 
-    const estaAtiva = troca.status === 'aceita' &&
-      dataInicio <= hoje &&
-      hoje <= dataFim;
+    const estaAtiva = dataInicio <= hoje && hoje <= dataFim;
 
-    if (estaAtiva && troca.agenda_original && troca.agenda_desejada) {
+    if (estaAtiva) {
       aplicarTroca(map, troca.agenda_original, troca.agenda_desejada);
       aplicarTroca(map, troca.agenda_desejada, troca.agenda_original);
     }
@@ -444,34 +534,36 @@ const calcularAgendaMap = (agendas) => {
 };
 
 const aplicarTroca = (map, origem, destino) => {
-  if (origem.turno && origem.dia_semana && origem.bloco &&
-    destino.disciplina && destino.user) {
-
-    if (!map[origem.turno][origem.dia_semana]) {
-      map[origem.turno][origem.dia_semana] = {};
-    }
-
-    map[origem.turno][origem.dia_semana][origem.bloco] = {
-      disciplina_nome: destino.disciplina.nome,
-      disciplina_id: destino.disciplina.id,
-      user_photo: destino.user.photo ? '/storage/' + destino.user.photo : '',
-      professor: destino.user.name,
-      original: false,
-      id: origem.id,
-      user_id: destino.user.id
-    };
+  if (!origem?.turno || !origem?.dia_semana || !origem?.bloco || !destino?.disciplina || !destino?.user) {
+    return;
   }
+
+  if (!map[origem.turno][origem.dia_semana]) {
+    map[origem.turno][origem.dia_semana] = {};
+  }
+
+  map[origem.turno][origem.dia_semana][origem.bloco] = {
+    disciplina_nome: destino.disciplina.nome,
+    disciplina_id: destino.disciplina.id,
+    user_photo: destino.user.photo ? '/storage/' + destino.user.photo : '',
+    professor: destino.user.name,
+    original: false,
+    id: origem.id,
+    user_id: destino.user.id
+  };
 };
 
 // Atualizar agenda quando os dados mudam
 watch(() => props.agendas, (newAgendas) => {
   localAgendaMap.value = calcularAgendaMap(newAgendas);
-}, { deep: true, immediate: true });
+}, { deep: true });
 
 // Verificação de trocas expiradas
 const verificarTrocasExpiradas = () => {
   const agora = new Date();
-  const trocasExpiradas = props.trocasAtivas?.filter(troca => {
+  const trocasExpiradas = (props.trocasAtivas || []).filter(troca => {
+    if (!troca?.data_fim) return false;
+    
     const dataFim = new Date(troca.data_fim);
     dataFim.setHours(23, 59, 59, 999);
 
@@ -482,8 +574,7 @@ const verificarTrocasExpiradas = () => {
     return estavaAtiva && agora > dataFim;
   });
 
-  if (trocasExpiradas?.length > 0) {
-    console.log('Trocas expiradas encontradas:', trocasExpiradas);
+  if (trocasExpiradas.length > 0) {
     router.reload({ only: ['agendas', 'trocasAtivas'] });
   }
 
@@ -492,14 +583,8 @@ const verificarTrocasExpiradas = () => {
 
 // Configurar intervalo de verificação
 onMounted(() => {
-  pollingInterval.value = setInterval(verificarTrocasExpiradas, 60000); // Verifica a cada minuto
-
-  // Solicitar permissão para notificações
-  if ('Notification' in window) {
-    Notification.requestPermission();
-  }
-  console.log('Auth prop:', props.auth);
-  console.log('Can edit:', props.canEdit);
+  pollingInterval.value = setInterval(verificarTrocasExpiradas, 60000);
+  localAgendaMap.value = calcularAgendaMap(props.agendas);
 });
 
 // Limpar intervalo ao desmontar
@@ -513,6 +598,7 @@ onBeforeUnmount(() => {
 const handleImageError = (event) => {
   event.target.src = '/images/default-profile.png';
 };
+
 const agendaMap = computed(() => localAgendaMap.value);
 </script>
 

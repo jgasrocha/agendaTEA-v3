@@ -10,66 +10,108 @@ use App\Http\Controllers\AgendaFixaController;
 use App\Http\Controllers\TrocaAgendaController;
 use App\Http\Controllers\CursoController;
 use App\Http\Controllers\TurmaController;
+use App\Http\Middleware\CursoAdminMiddleware;
 use App\Models\AgendaFixa;
 use App\Models\Curso;
 use App\Models\TrocaAgenda;
 use Illuminate\Support\Facades\Auth;
 
-// Rotas públicas
 Route::get('/', function () {
     $cursos = Curso::all();
-
     return Inertia::render('Cursos/Index', [
         'cursos' => $cursos,
-        'auth' => Auth::user() ? ['user' => Auth::user()] : null
+        'auth' => ['user' => Auth::user()]
     ]);
 })->name('home');
 
-Route::get('/cursos/{curso}/turmas/{turma}/agenda', [TurmaController::class, 'agenda'])
-    ->name('cursos.turmas.agenda.index');
+// Rotas públicas para cursos
+Route::get('/cursos', [CursoController::class, 'index'])->name('cursos.index');
+Route::get('/cursos/{curso}', [CursoController::class, 'show'])->name('cursos.show');
 
-Route::resource('cursos', CursoController::class)
-    ->middleware(['auth', 'verified']);
-
-// Rotas para Turmas (aninhadas em Cursos)
-
-
+// Rotas públicas para turmas
+Route::prefix('cursos/{curso}')->group(function () {
+    Route::get('/turmas', [TurmaController::class, 'index'])->name('cursos.turmas.index');
+    Route::get('/turmas/{turma}', [TurmaController::class, 'show'])->name('cursos.turmas.show');
+    Route::get('/turmas/{turma}/agenda', [TurmaController::class, 'agenda'])->name('cursos.turmas.agenda.index');
+});
 
 // Rotas de autenticação
 require __DIR__ . '/auth.php';
 
-Route::prefix('admin')->middleware(['auth', 'verified', 'admin'])->name('admin.')->group(function () {
-    Route::resource('cursos', CursoController::class);
-    
-    // Rotas aninhadas para Turmas e Aulas
+// Rotas protegidas - acesso comum (usuário autenticado)
+Route::middleware(['auth', 'verified'])->group(function () {
+    // Cursos (exceto show, que é público)
+    Route::resource('cursos', CursoController::class)->except(['show']);
+
     Route::prefix('cursos/{curso}')->group(function () {
-        Route::resource('turmas', TurmaController::class)->names('cursos.turmas');
-    
+        // Turmas
+        Route::get('turmas', [TurmaController::class, 'index'])->name('cursos.turmas.index');
+
+        // Aqui estão as rotas para criar turmas (comuns e admin de curso)
+        Route::get('turmas/create', [TurmaController::class, 'create'])
+            ->name('cursos.turmas.create')
+            ->middleware('can:create,App\Models\Turma,curso');
+
+        Route::post('turmas', [TurmaController::class, 'store'])
+            ->name('cursos.turmas.store')
+            ->middleware('can:create,App\Models\Turma,curso');
+
+        Route::get('turmas/{turma}/edit', [TurmaController::class, 'edit'])
+            ->name('cursos.turmas.edit')
+            ->middleware('can:update,turma');
+
+        Route::put('turmas/{turma}', [TurmaController::class, 'update'])
+            ->name('cursos.turmas.update')
+            ->middleware('can:update,turma');
+
+        Route::delete('turmas/{turma}', [TurmaController::class, 'destroy'])
+            ->name('cursos.turmas.destroy')
+            ->middleware('can:delete,turma');
+
+        Route::get('turmas/{turma}', [TurmaController::class, 'show'])
+            ->name('cursos.turmas.show');
+
+        Route::get('turmas/{turma}/agenda', [TurmaController::class, 'agenda'])
+            ->name('cursos.turmas.agenda.index');
+
+        // Agendas Fixas (criação e exclusão)
         Route::prefix('turmas/{turma}')->scopeBindings()->group(function () {
-            Route::get('agenda', [TurmaController::class, 'agenda'])->name('cursos.turmas.agenda.index');
-            Route::get('agendas/create', [AgendaFixaController::class, 'create'])->name('cursos.turmas.agendas.create');
-            Route::post('agendas', [AgendaFixaController::class, 'store'])->name('cursos.turmas.agendas.store');
-            Route::delete('agendas/{agenda}', [AgendaFixaController::class, 'destroy'])->name('cursos.turmas.agendas.destroy');
+            Route::get('agendas/create', [AgendaFixaController::class, 'create'])
+                ->name('cursos.turmas.agendas.create')
+                ->middleware('can:create,App\Models\AgendaFixa,curso');
+
+            Route::post('agendas', [AgendaFixaController::class, 'store'])
+                ->name('cursos.turmas.agendas.store')
+                ->middleware('can:create,App\Models\AgendaFixa,curso');
+
+            Route::delete('agendas/{agenda}', [AgendaFixaController::class, 'destroy'])
+                ->name('cursos.turmas.agendas.destroy')
+                ->middleware('can:delete,agenda');
         });
     });
 });
 
-Route::middleware(['auth', 'verified'])->group(function () {
+// Rotas protegidas - apenas para admin global
+Route::prefix('admin')->middleware(['auth', 'verified', 'admin'])->name('admin.')->group(function () {
     Route::resource('cursos', CursoController::class);
-    
-    // Rotas aninhadas para Turmas e Aulas
+
     Route::prefix('cursos/{curso}')->group(function () {
-        Route::resource('turmas', TurmaController::class)->names('cursos.turmas');
-    
+        Route::resource('turmas', TurmaController::class)->except(['index', 'show', 'agenda']);
+
         Route::prefix('turmas/{turma}')->scopeBindings()->group(function () {
-            Route::get('agenda', [TurmaController::class, 'agenda'])->name('cursos.turmas.agenda.index');
-            Route::get('agendas/create', [AgendaFixaController::class, 'create'])->name('cursos.turmas.agendas.create');
-            Route::post('agendas', [AgendaFixaController::class, 'store'])->name('cursos.turmas.agendas.store');
-            Route::delete('agendas/{agenda}', [AgendaFixaController::class, 'destroy'])->name('cursos.turmas.agendas.destroy')->middleware('can:delete,agendaFixa')
-            ->scopeBindings();
+            Route::get('agendas/create', [AgendaFixaController::class, 'create'])
+                ->name('turmas.agendas.create');
+
+            Route::post('agendas', [AgendaFixaController::class, 'store'])
+                ->name('turmas.agendas.store');
+
+            Route::delete('agendas/{agenda}', [AgendaFixaController::class, 'destroy'])
+                ->name('turmas.agendas.destroy');
         });
     });
 });
+
+
 // Rotas para agenda fixa (acessível a todos autenticados)
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/agenda-fixa', function () {
@@ -96,7 +138,7 @@ Route::prefix('admin')->middleware(['auth', 'verified', 'admin'])->name('admin.'
     Route::resource('users', UserController::class)->except(['show']);
     Route::post('users/{user}/upload-photo', [UserController::class, 'uploadPhoto'])->name('users.uploadPhoto');
     Route::get('/users/inactive', [UserController::class, 'inactive'])
-     ->name('users.inactive');
+        ->name('users.inactive');
     Route::put('users/{user}/restore', [UserController::class, 'restore'])->name('users.restore');
 
     // Gerenciamento de disciplinas

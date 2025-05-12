@@ -45,11 +45,27 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'is_admin' => 'boolean'
         ];
     }
 
     public function disciplinas()
     {
         return $this->hasMany(Disciplina::class);
+    }
+
+    public function cursosAdmin()
+    {
+        return $this->belongsToMany(Curso::class, 'curso_user_pivot');
+    }
+
+    public function isCourseAdmin(Curso $curso)
+    {
+        return $this->is_admin || $this->cursosAdmin()->where('curso_id', $curso->id)->exists();
+    }
+
+    public function canManageCourse(Curso $curso)
+    {
+        return $this->is_admin || $this->isCourseAdmin($curso);
     }
 }

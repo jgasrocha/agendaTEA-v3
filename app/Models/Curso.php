@@ -23,6 +23,23 @@ class Curso extends Model
 
     public function admins()
     {
-        return $this->belongsToMany(User::class,'curso_user');
+        return $this->belongsToMany(User::class, 'curso_user_pivot');
+    }
+
+    public function scopeWithAdmins($query)
+    {
+        return $query->with(['admins' => function ($q) {
+            $q->select('users.id', 'name', 'email');
+        }]);
+    }
+
+    public function addAdmin(User $user)
+    {
+        return $this->admins()->syncWithoutDetaching([$user->id]);
+    }
+
+    public function removeAdmin(User $user)
+    {
+        return $this->admins()->detach($user->id);
     }
 }

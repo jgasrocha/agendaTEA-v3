@@ -3,7 +3,7 @@
   <div class="p-6">
     <div class="flex justify-between items-center mb-6">
       <h1 class="text-2xl font-bold">Lista de Turmas</h1>
-      <Link :href="route('cursos.turmas.create', curso.id)"
+      <Link v-if="$page.props.auth.user" :href="getCreateTurmaRoute()"
         class="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg transition-colors shadow-md">
       <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
         <path fill-rule="evenodd"
@@ -19,22 +19,26 @@
         class="bg-white rounded-lg shadow-md p-4 cursor-pointer hover:shadow-lg transition-all duration-200 border border-gray-100"
         @click="verTurma(turma)">
         <h2 class="text-lg font-semibold mb-2">{{ turma.nome }}</h2>
-        
+
         <div class="flex items-center gap-2 mb-3">
           <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-sky-100 text-sky-800">
             {{ formatSemestre(turma.semestre) }}
           </span>
-          <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-violet-100 text-violet-800">
+          <span
+            class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-violet-100 text-violet-800">
             {{ turma.agendas_count }} {{ turma.agendas_count === 1 ? 'agenda' : 'agendas' }}
           </span>
         </div>
 
-        <div class="flex justify-end">
+        <div v-if="$page.props.auth.user && ($page.props.auth.user.is_admin || $page.props.isCourseAdmin)"
+          class="flex justify-end">
           <button @click.stop="abrirModal(turma)"
             class="text-sky-600 hover:text-sky-800 text-sm flex items-center gap-1">
             Editar
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24"
+              stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
             </svg>
           </button>
         </div>
@@ -42,8 +46,7 @@
     </div>
 
     <!-- Modal de Edição -->
-    <div v-if="turmaSelecionada"
-      class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+    <div v-if="turmaSelecionada" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
       <div class="bg-white rounded-lg p-6 w-full max-w-lg relative shadow-xl">
         <button @click="fecharModal" class="absolute top-4 right-4 text-gray-500 hover:text-gray-700 transition-colors">
           <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -101,14 +104,33 @@ import Swal from 'sweetalert2'
 
 const props = defineProps({
   turmas: Array,
-  curso: Object
+  curso: Object,
+  isCourseAdmin: Boolean
 })
+
 
 const turmaSelecionada = ref(null)
 const salvando = ref(false)
 const anoSelecionado = ref(new Date().getFullYear())
 const periodoSelecionado = ref('1')
+console.log(props.curso.id)
+console.log(props.turmas)
+console.log(props.isCourseAdmin)
 
+// Função corrigida para criar URL direto para a rota correta
+function getCreateTurmaRoute() {
+    const user = usePage().props.auth.user;
+    
+    // Para administradores globais, a rota é um pouco diferente devido ao resource controller
+    if (user && user.is_admin) {
+        // Para administradores globais, vamos construir uma URL diretamente
+        // baseado na estrutura de rotas resource
+        return `/admin/cursos/${props.curso.id}/turmas/create`;
+    } else {
+        // Para usuários comuns ou admins de curso
+        return route('cursos.turmas.create', { curso: props.curso.id });
+    }
+}
 // Gerar anos de 2020 até 5 anos no futuro
 const anosDisponiveis = Array.from({ length: 10 }, (_, i) => new Date().getFullYear() - 2 + i)
 
@@ -119,10 +141,10 @@ const formatSemestre = (semestre) => {
 
 // Redireciona para a página de agenda da turma
 const verTurma = (turma) => {
-  const {props} = usePage()
-  router.visit(route('cursos.turmas.agenda.index', { 
-    curso: props.curso.id, 
-    turma: turma.id 
+  const { props } = usePage()
+  router.visit(route('cursos.turmas.agenda.index', {
+    curso: props.curso.id,
+    turma: turma.id
   }))
 }
 
@@ -158,9 +180,9 @@ const salvarEdicao = async () => {
       _method: 'PUT'
     }
 
-    await router.post(route('cursos.turmas.update', { 
-      curso: props.curso.id, 
-      turma: turmaSelecionada.value.id 
+    await router.post(route('cursos.turmas.update', {
+      curso: props.curso.id,
+      turma: turmaSelecionada.value.id
     }), form)
 
     await Swal.fire({
@@ -197,9 +219,9 @@ const deletarTurma = async () => {
 
   if (result.isConfirmed) {
     try {
-      await router.delete(route('cursos.turmas.destroy', { 
-        curso: props.curso.id, 
-        turma: turmaSelecionada.value.id 
+      await router.delete(route('cursos.turmas.destroy', {
+        curso: props.curso.id,
+        turma: turmaSelecionada.value.id
       }))
 
       await Swal.fire({

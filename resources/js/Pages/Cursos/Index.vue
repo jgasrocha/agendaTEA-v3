@@ -3,16 +3,12 @@
   <div class="p-6">
     <div class="flex justify-between items-center mb-6">
       <h1 class="text-2xl font-bold">Lista de Cursos</h1>
-      <Link 
-      v-if="$page.props.auth.user?.is_admin"
-      :href="route('cursos.create')"
+      <Link v-if="$page.props.auth.user?.is_admin" :href="route('admin.cursos.create')"
         class="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg transition-colors shadow-md">
-      <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-        <path fill-rule="evenodd"
-          d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z"
-          clip-rule="evenodd" />
-      </svg>
-      Novo Curso
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+          <path fill-rule="evenodd" d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z" clip-rule="evenodd" />
+        </svg>
+        Novo Curso
       </Link>
     </div>
 
@@ -24,12 +20,9 @@
           <img v-if="curso.imagem" :src="`/storage/${curso.imagem}`" alt="Imagem do Curso"
             class="w-full h-40 object-cover rounded-lg" />
           <div v-else class="w-full h-40 bg-gray-100 flex items-center justify-center text-gray-500 rounded-lg">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12" fill="none" viewBox="0 0 24 24"
-              stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1"
-                d="M4 5a1 1 0 011-1h14a1 1 0 011 1v14a1 1 0 01-1 1H5a1 1 0 01-1-1V5z" />
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1"
-                d="M8 7v4m0 4v4m4-8v4m0 4v4m4-8v4m0 4v4" />
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v14a1 1 0 01-1 1H5a1 1 0 01-1-1V5z" />
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M8 7v4m0 4v4m4-8v4m0 4v4m4-8v4m0 4v4" />
             </svg>
           </div>
         </div>
@@ -41,8 +34,7 @@
             {{ curso.turmas_count }} {{ curso.turmas_count === 1 ? 'turma' : 'turmas' }}
           </span>
           <Link :href="route('cursos.turmas.index', curso.id)"
-            class="text-sky-600 hover:text-sky-700 text-sm flex items-center gap-1"
-            @click.stop>
+            class="text-sky-600 hover:text-sky-700 text-sm flex items-center gap-1" @click.stop>
             Ver turmas
             <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
@@ -53,7 +45,7 @@
     </div>
 
     <!-- Modal de Edição -->
-    <div v-if="cursoSelecionado"
+    <div v-if="showModal && cursoSelecionado"
       class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
       <div class="bg-white rounded-lg p-6 w-full max-w-lg relative shadow-xl">
         <button @click="fecharModal" class="absolute top-4 right-4 text-gray-500 hover:text-gray-700 transition-colors">
@@ -74,6 +66,25 @@
             <label class="block text-sm font-medium text-gray-700 mb-1">Descrição</label>
             <textarea v-model="cursoSelecionado.descricao"
               class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 h-24"></textarea>
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Administrador do Curso</label>
+            <select v-model="adminSelecionado"
+              class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <option :value="null">Selecione um administrador</option>
+              <option v-for="user in $page.props.usuarios" 
+                      :key="user.id" 
+                      :value="user.id">
+                {{ user.name }} ({{ user.email }}) {{ user.is_admin ? '(Admin Global)' : '' }}
+              </option>
+            </select>
+            <p v-if="cursoSelecionado.admins && cursoSelecionado.admins.length > 0" class="text-sm text-gray-500 mt-1">
+              Admins atuais:
+              <span v-for="(admin, index) in cursoSelecionado.admins" :key="admin.id">
+                {{ admin.name }}<span v-if="index < cursoSelecionado.admins.length - 1">, </span>
+              </span>
+            </p>
           </div>
 
           <div>
@@ -119,22 +130,35 @@ import Swal from 'sweetalert2'
 
 defineProps({
   cursos: Array,
-  auth: Object
+  usuarios: Array,
+  auth: {
+    type: Object,
+    default: () => ({ user: null })
+  }
 })
 
-const cursoSelecionado = ref(null)
+const showModal = ref(false)
+const cursoSelecionado = ref({
+  admins: []
+})
+const adminSelecionado = ref(null)
 const novaImagem = ref(null)
 const previewImagem = ref(null)
 const salvando = ref(false)
 
 const abrirModal = (curso) => {
-  cursoSelecionado.value = { ...curso }
-  novaImagem.value = null
-  previewImagem.value = null
+  cursoSelecionado.value = {
+    ...curso,
+    admins: curso.admins || []
+  }
+  adminSelecionado.value = curso.admins?.find(a => !a.is_admin)?.id || null
+  showModal.value = true
 }
 
 const fecharModal = () => {
-  cursoSelecionado.value = null
+  showModal.value = false
+  cursoSelecionado.value = { admins: [] }
+  adminSelecionado.value = null
   novaImagem.value = null
   previewImagem.value = null
 }
@@ -154,13 +178,14 @@ const salvarEdicao = async () => {
     const form = new FormData()
     form.append('nome', cursoSelecionado.value.nome)
     form.append('descricao', cursoSelecionado.value.descricao)
+    form.append('admin_id', adminSelecionado.value || '')
 
     if (novaImagem.value) {
       form.append('imagem', novaImagem.value)
     }
     form.append('_method', 'PUT')
 
-    await router.post(route('cursos.update', cursoSelecionado.value.id), form, {
+    await router.post(route('admin.cursos.update', cursoSelecionado.value.id), form, {
       preserveScroll: true,
     })
 
@@ -173,6 +198,7 @@ const salvarEdicao = async () => {
     })
 
     fecharModal()
+    router.reload({ only: ['cursos'] })
   } catch (error) {
     await Swal.fire({
       icon: 'error',
@@ -198,7 +224,7 @@ const deletarCurso = async () => {
 
   if (result.isConfirmed) {
     try {
-      await router.delete(route('cursos.destroy', cursoSelecionado.value.id))
+      await router.delete(route('admin.cursos.destroy', cursoSelecionado.value.id))
 
       await Swal.fire({
         icon: 'success',
@@ -209,6 +235,7 @@ const deletarCurso = async () => {
       })
 
       fecharModal()
+      router.reload({ only: ['cursos'] })
     } catch (error) {
       await Swal.fire({
         icon: 'error',
@@ -221,7 +248,7 @@ const deletarCurso = async () => {
 </script>
 
 <style>
-/* Estilos para selects personalizados */
+/* Estilos mantidos iguais */
 select {
   appearance: none;
   background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
@@ -230,7 +257,6 @@ select {
   background-size: 1.5em;
 }
 
-/* Transições suaves */
 button,
 .hover\:shadow-lg,
 .cursor-pointer {
@@ -241,14 +267,13 @@ button:active {
   transform: scale(0.98);
 }
 
-/* Efeito hover nos cards de curso */
 .bg-white:hover {
   transform: translateY(-2px);
 }
 
 .line-clamp-2 {
   display: -webkit-box;
-  -webkit-box-orient: vertical;  
+  -webkit-box-orient: vertical;
   overflow: hidden;
 }
 </style>
